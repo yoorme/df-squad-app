@@ -1,0 +1,65 @@
+name: Build APK
+
+# push 到 main 自动构建签名 APK 并上传为 Release 附件
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+            cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=squadapp
+          keyPassword=$KEYSTORE_PASSWORD
+          EOF
+          else
+            echo "未配置签名密钥，本次构建 debug 签名 APK"
+          fi
+
+      - name: Build release APK
+        run: |
+          if [ -f keystore.properties ]; then
+            ./gradlew assembleRelease
+          else
+            ./gradlew assembleDebug
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: squad-apk
+          path: app/build/outputs/apk/**/*.apk
+
+      - name: Publish to Release (latest)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(ls app/build/outputs/apk/*/*/*.apk | head -1)
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest "$APK" --title "Latest APK" --notes "Auto-built from commit ${{ github.sha }}" --target main

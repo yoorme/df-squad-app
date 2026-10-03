@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 站点暂通过 IP 明文 HTTP 访问；后续配置 HTTPS 域名后移除对应条目即可 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">121.196.195.27</domain>
+    </domain-config>
+</network-security-config>
