@@ -23,6 +23,12 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 默认会尝试安装 `tools`，该包已从 SDK 源移除（现由 cmdline-tools 取代），
+          # 会导致 sdkmanager 报 "Failed to find package 'tools'" 直接失败。
+          # 这里只装 platform-tools；编译所需平台由 Gradle 在构建时自动下载
+          # （Runner 已预置常用平台与已接受的 license）
+          packages: 'platform-tools'
 
       - name: Restore signing key
         env:
