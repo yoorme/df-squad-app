@@ -25,8 +25,23 @@ C:\Users\14515\tools\gradle-8.14.3\bin\gradle.bat assembleRelease   # 签名正�
 
 ## 发新版本
 
+### 方式 A：本地打包
+
 1. 修改 `app/build.gradle.kts` 中的 `versionCode`（+1）与 `versionName`。
 2. `gradle.bat assembleRelease`，把新 APK 发给队员覆盖安装。
+
+### 方式 B：推送到 GitHub 自动出包（推荐）
+
+push 到 `main` 后，GitHub Actions（`.github/workflows/build-apk.yml`）会自动构建并发布到
+**Releases → latest**，队员直接下载安装：
+
+```
+https://github.com/yoorme/squad-app/releases/latest
+```
+
+签名所需的 keystore 与密码存放在仓库 Secrets（`RELEASE_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD`）；
+未配置时工作流降级为 debug 签名包（可安装但不适合正式分发）。
+更换签名密钥后必须在 `keystore.properties` 与仓库 Secrets 两处同步更新。
 
 ## 目录结构
 
