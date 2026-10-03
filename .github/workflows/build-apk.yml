@@ -66,6 +66,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK=$(ls app/build/outputs/apk/*/*/*.apk | head -1)
+          # 用 find 而非固定层级通配：APK 实际路径为
+          # app/build/outputs/apk/<variant>/<name>.apk，写死层级会在变体变化时失效
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "未找到构建产物 APK，无法发布"; exit 1
+          fi
+          echo "发布产物：$APK"
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           gh release create latest "$APK" --title "Latest APK" --notes "Auto-built from commit ${{ github.sha }}" --target main
