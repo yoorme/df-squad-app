@@ -17,5 +17,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "squad-app"
+rootProject.name = "df-squad-app"
 include(":app")

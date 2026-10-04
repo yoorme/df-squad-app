@@ -1,6 +1,6 @@
-# squad-app — 战队报名原生安卓 App
+# df-squad-app — 战队报名原生安卓 App
 
-Kotlin + Jetpack Compose 编写的原生安卓客户端，配合 `squad-signup-latest` 网站服务端使用。
+Kotlin + Jetpack Compose 编写的原生安卓客户端，配合 `df-squad-web` 网站服务端使用。
 
 ## 环境要求
 
@@ -12,8 +12,7 @@ Kotlin + Jetpack Compose 编写的原生安卓客户端，配合 `squad-signup-l
 ## 构建命令
 
 ```bash
-# 注意：工程路径含中文，必须通过 ASCII 联接路径构建（已建好）
-cd C:\squad-app
+cd C:\Users\14515\Documents\MMR\df-squad-app
 set JAVA_HOME=C:\Users\14515\tools\jdk\jdk-17.0.13+11
 C:\Users\14515\tools\gradle-8.14.3\bin\gradle.bat assembleDebug     # 调试包
 C:\Users\14515\tools\gradle-8.14.3\bin\gradle.bat assembleRelease   # 签名正式包
@@ -36,7 +35,7 @@ push 到 `main` 后，GitHub Actions（`.github/workflows/build-apk.yml`）会�
 **Releases → latest**，队员直接下载安装：
 
 ```
-https://github.com/yoorme/squad-app/releases/latest
+https://github.com/yoorme/df-squad-app/releases/latest
 ```
 
 签名所需的 keystore 与密码存放在仓库 Secrets（`RELEASE_KEYSTORE_BASE64` / `KEYSTORE_PASSWORD`）；
