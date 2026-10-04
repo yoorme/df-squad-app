@@ -243,6 +243,7 @@ fun Root(
             AnnouncementEditScreen(
                 repo = repo,
                 announcementId = id,
+                serverBase = Servers.byId(serverId).baseUrl,
                 onDone = { refresh++; navController.popBackStack() },
             )
         }

@@ -1,5 +1,8 @@
 package com.yoorme.squadsignup.core
 
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 
 class AuthRequiredException : Exception("登录已过期")
@@ -79,13 +82,21 @@ class Repo(private val store: SessionStore) {
     suspend fun announcementDetail(id: String): AnnouncementDetail =
         call { announcementDetail(status = null, mode = "detail", id = id) }
 
-    suspend fun createAnnouncement(title: String, contentMarkdown: String) {
-        call { saveAnnouncement(AnnouncementSaveRequest(title = title, contentMarkdown = contentMarkdown, images = emptyList())) }
+    suspend fun createAnnouncement(title: String, contentMarkdown: String, images: List<String>) {
+        call { saveAnnouncement(AnnouncementSaveRequest(title = title, contentMarkdown = contentMarkdown, images = images)) }
     }
 
     // 编辑必须走 PATCH（POST 是新建接口，传 id 会被服务端忽略导致重复创建）
-    suspend fun updateAnnouncement(id: String, title: String, contentMarkdown: String) {
-        call { patchAnnouncement(AnnouncementSaveRequest(id = id, title = title, contentMarkdown = contentMarkdown)) }
+    // images 传完整列表：服务端按新旧对比做 tmp→正式迁移、跨公告隔离与删除
+    suspend fun updateAnnouncement(id: String, title: String, contentMarkdown: String, images: List<String>) {
+        call { patchAnnouncement(AnnouncementSaveRequest(id = id, title = title, contentMarkdown = contentMarkdown, images = images)) }
+    }
+
+    // 上传公告图片（仅管理员）：与网站管理端同一接口，返回 /uploads/tmp/xxx 路径
+    suspend fun uploadImage(bytes: ByteArray, fileName: String, mimeType: String): String {
+        val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+        val part = MultipartBody.Part.createFormData("file", fileName, body)
+        return call { uploadImage(part) }.path
     }
 
     suspend fun archiveAnnouncement(id: String, archived: Boolean) {

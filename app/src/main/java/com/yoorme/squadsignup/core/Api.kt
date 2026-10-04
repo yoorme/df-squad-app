@@ -3,14 +3,17 @@ package com.yoorme.squadsignup.core
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import retrofit2.Retrofit
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
@@ -110,6 +113,13 @@ interface SquadApi {
     @DELETE("api/me/devices")
     suspend fun unregisterDevice(@Query("registrationId") registrationId: String): ApiEnvelope<SimpleOk>
 
+    // ---- 上传（仅管理员）----
+    // 与网站管理端同一接口：multipart 字段名固定为 file，返回 /uploads/tmp/xxx 路径，
+    // 保存公告时由服务端迁移到正式目录并改写引用（见网站 lib/announcement-images.ts）
+    @Multipart
+    @POST("api/upload")
+    suspend fun uploadImage(@Part file: MultipartBody.Part): ApiEnvelope<UploadResponse>
+
     // ---- 标签 / 选项 ----
     @GET("api/options")
     suspend fun options(@Query("only") only: String = "all"): ApiEnvelope<OptionsResponse>
@@ -150,6 +160,9 @@ interface SquadApi {
 @kotlinx.serialization.Serializable
 data class EventIdResponse(val id: String)
 
+@kotlinx.serialization.Serializable
+data class UploadResponse(val path: String)
+
 // ============ 网络客户端构建 ============
 
 object ApiClient {
@@ -164,6 +177,8 @@ object ApiClient {
         val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
+            // 公告图片上传最大 5MB，弱网下 10 秒默认写超时不够用
+            .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val token = runCatching { kotlinx.coroutines.runBlocking { tokenProvider() } }.getOrNull()
                 val request: Request = if (token.isNullOrBlank()) {

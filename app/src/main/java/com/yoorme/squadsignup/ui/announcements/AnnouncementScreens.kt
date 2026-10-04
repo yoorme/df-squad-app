@@ -2,6 +2,11 @@
 
 package com.yoorme.squadsignup.ui.announcements
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +20,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,14 +31,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
@@ -49,11 +59,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.yoorme.squadsignup.core.AnnouncementDetail
 import com.yoorme.squadsignup.core.AnnouncementSummary
 import com.yoorme.squadsignup.core.ApiException
+import com.yoorme.squadsignup.core.AuthRequiredException
 import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SquadServer
 import com.yoorme.squadsignup.core.TimeFmt
@@ -416,19 +432,62 @@ private fun CommentBubble(
 
 // ============ 公告编辑 ============
 
+// 与网站管理端保持一致：最多 20 张、单张 ≤5MB（服务端会再校验一次）
+private const val MAX_ANNOUNCEMENT_IMAGES = 20
+private const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
+private fun extOfMime(mime: String): String = when {
+    mime.contains("png", true) -> "png"
+    mime.contains("gif", true) -> "gif"
+    mime.contains("webp", true) -> "webp"
+    mime.contains("bmp", true) -> "bmp"
+    else -> "jpg"
+}
+
+/**
+ * 读取所选图片为字节流；超过 5MB 立即中止（与网站端行为一致，避免读到内存里才发现超限）。
+ * 返回 (bytes, mimeType)。
+ */
+private fun readPickedImage(context: Context, uri: Uri): Result<Pair<ByteArray, String>> = try {
+    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+    val input = context.contentResolver.openInputStream(uri)
+        ?: return Result.failure(IllegalArgumentException("无法读取所选图片"))
+    val bytes = input.use { stream ->
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = stream.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            if (out.size() > MAX_UPLOAD_BYTES) {
+                return Result.failure(IllegalArgumentException("图片超过 5MB，请先压缩后再上传"))
+            }
+        }
+        out.toByteArray()
+    }
+    Result.success(bytes to mime)
+} catch (e: Exception) {
+    Result.failure(IllegalArgumentException("读取图片失败：${e.message ?: "未知错误"}"))
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnnouncementEditScreen(
     repo: Repo,
     announcementId: String?,
+    serverBase: String,
     onDone: () -> Unit,
 ) {
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
+    var images by remember { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(announcementId != null) }
     var saving by remember { mutableStateOf(false) }
+    var uploading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(announcementId) {
         if (announcementId != null) {
@@ -436,11 +495,54 @@ fun AnnouncementEditScreen(
                 val d = repo.announcementDetail(announcementId)
                 title = d.title
                 content = d.contentMarkdown
+                images = d.images.sortedBy { it.sortOrder }.map { it.path }
             } catch (e: Exception) {
                 error = e.message
             } finally {
                 loading = false
             }
+        }
+    }
+
+    // 系统相册/图片选择（Photo Picker，无需存储权限）
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        if (images.size + uris.size > MAX_ANNOUNCEMENT_IMAGES) {
+            error = "最多 $MAX_ANNOUNCEMENT_IMAGES 张图片"
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            uploading = true; error = null; notice = null
+            var uploaded = 0
+            for (uri in uris) {
+                val picked = readPickedImage(context, uri)
+                if (picked.isFailure) {
+                    error = picked.exceptionOrNull()?.message ?: "图片读取失败"
+                    break
+                }
+                val (bytes, mime) = picked.getOrThrow()
+                try {
+                    val path = repo.uploadImage(bytes, "image.${extOfMime(mime)}", mime)
+                    images = images + path
+                    // 与网站管理端一致：上传后立即插入正文末尾（服务端保存时迁移 tmp→正式并改写路径）
+                    content = "$content\n\n![图片]($path)\n"
+                    uploaded++
+                } catch (_: AuthRequiredException) {
+                    // 会话失效：Repo 已清本地会话，界面会自动回登录页
+                    uploading = false
+                    return@launch
+                } catch (e: ApiException) {
+                    error = e.message
+                    break
+                } catch (e: Exception) {
+                    error = "上传失败，请检查网络后重试"
+                    break
+                }
+            }
+            if (uploaded > 0) notice = "已上传 $uploaded 张图片，保存公告后正式生效"
+            uploading = false
         }
     }
 
@@ -485,12 +587,80 @@ fun AnnouncementEditScreen(
                         minLines = 10,
                     )
                 }
-                // 图片：请在网站管理端上传后引用其路径；App 端先支持纯文本编辑
-                Text(
-                    "提示：图片请先在网站管理端上传获取路径后，以 ![描述](/uploads/xx) 形式引用。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+
+                // ---- 图片上传（插入正文 + 随公告保存；服务端负责 tmp→正式迁移与删除清理）----
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            if (images.size >= MAX_ANNOUNCEMENT_IMAGES) {
+                                error = "最多 $MAX_ANNOUNCEMENT_IMAGES 张图片"
+                            } else {
+                                pickImages.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        },
+                        enabled = !uploading && !saving,
+                    ) {
+                        if (uploading) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("上传中…")
+                        } else {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("添加图片")
+                        }
+                    }
+                    Text(
+                        "最多 $MAX_ANNOUNCEMENT_IMAGES 张，单张不超过 5MB",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (images.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(images, key = { it }) { path ->
+                            Box {
+                                AsyncImage(
+                                    model = serverBase.trimEnd('/') + path,
+                                    contentDescription = "公告图片",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(96.dp)
+                                        .clip(MaterialTheme.shapes.medium),
+                                )
+                                Box(
+                                    Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(3.dp)
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f))
+                                        .clickable {
+                                            images = images.filterNot { it == path }
+                                            // 与网站端一致：同时移除正文中的引用行（保存时服务端删除不再引用的文件）
+                                            content = content.replace(
+                                                Regex("\\n*!\\[[^\\]]*\\]\\(${Regex.escape(path)}\\)\\n*"),
+                                                "\n",
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "移除图片",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                notice?.let {
+                    Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 Button(
                     onClick = {
@@ -500,9 +670,11 @@ fun AnnouncementEditScreen(
                         saving = true; error = null
                         scope.launch {
                             try {
-                                if (announcementId == null) repo.createAnnouncement(title.trim(), content)
-                                else repo.updateAnnouncement(announcementId, title.trim(), content)
+                                if (announcementId == null) repo.createAnnouncement(title.trim(), content, images)
+                                else repo.updateAnnouncement(announcementId, title.trim(), content, images)
                                 onDone()
+                            } catch (_: AuthRequiredException) {
+                                // 会话失效：Repo 已清本地会话，界面会自动回登录页
                             } catch (e: ApiException) {
                                 error = e.message
                             } catch (e: Exception) {
@@ -513,7 +685,7 @@ fun AnnouncementEditScreen(
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
-                    enabled = !saving,
+                    enabled = !saving && !uploading,
                 ) { Text(if (announcementId == null) "发布" else "保存") }
             }
         }
