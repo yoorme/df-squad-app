@@ -1,4 +1,4 @@
-# df-squad-app — 战队报名原生安卓 App
+# df-squad-app — 三角洲行动战队管理（原生安卓 App）
 
 Kotlin + Jetpack Compose 编写的原生安卓客户端，配合 `df-squad-web` 网站服务端使用。
 

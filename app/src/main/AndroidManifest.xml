@@ -55,7 +55,7 @@
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_mmr"
-            android:label="MMR战队报名"
+            android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -68,7 +68,7 @@
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_yfd"
-            android:label="YFD战队报名"
+            android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

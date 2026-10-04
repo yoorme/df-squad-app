@@ -14,12 +14,12 @@ import java.net.URL
 
 /**
  * 把公告图片保存到本机相册。
- * - Android 10+：MediaStore 写入 Pictures/战队报名，无需任何权限
+ * - Android 10+：MediaStore 写入 Pictures/三角洲行动战队管理，无需任何权限
  * - Android 9-：写公共 Pictures 目录，需要 WRITE_EXTERNAL_STORAGE（调用方负责申请后调用）
  */
 object ImageSaver {
 
-    const val ALBUM_DIR = "战队报名"
+    const val ALBUM_DIR = "三角洲行动战队管理"
 
     /** Android 9 及以下写公共目录需要存储权限；10+ 不需要 */
     fun needsLegacyPermission(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q

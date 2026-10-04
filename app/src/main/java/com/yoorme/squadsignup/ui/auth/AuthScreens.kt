@@ -66,9 +66,9 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("战队报名", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("三角洲行动战队管理", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("三角洲行动战队内部系统", style = MaterialTheme.typography.bodyMedium,
+        Text("战队内部系统", style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
 
