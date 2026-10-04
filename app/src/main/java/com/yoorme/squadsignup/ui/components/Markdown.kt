@@ -1,5 +1,7 @@
 package com.yoorme.squadsignup.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -65,7 +67,14 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInlineAnnotat
 }
 
 @Composable
-fun MarkdownText(markdown: String, baseUrl: String, modifier: Modifier = Modifier) {
+fun MarkdownText(
+    markdown: String,
+    baseUrl: String,
+    modifier: Modifier = Modifier,
+    // 图片手势：双击进全屏 / 长按保存（不传则图片不可交互）
+    onImageDoubleTap: ((String) -> Unit)? = null,
+    onImageLongPress: ((String) -> Unit)? = null,
+) {
     Column(modifier.fillMaxWidth()) {
         val lines = markdown.replace("\r\n", "\n").split("\n")
         var inCodeBlock = false
@@ -109,11 +118,12 @@ fun MarkdownText(markdown: String, baseUrl: String, modifier: Modifier = Modifie
                 }
                 IMAGE_RE.matches(trimmed) -> {
                     val m = IMAGE_RE.find(trimmed)!!
-                    var url = m.groupValues[2]
-                    if (url.startsWith("/")) url = baseUrl.trimEnd('/') + url
-                    AsyncImage(
-                        model = url,
-                        contentDescription = m.groupValues[1],
+                    MarkdownImage(
+                        url = m.groupValues[2],
+                        description = m.groupValues[1],
+                        baseUrl = baseUrl,
+                        onDoubleTap = onImageDoubleTap,
+                        onLongPress = onImageLongPress,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     )
                 }
@@ -128,11 +138,12 @@ fun MarkdownText(markdown: String, baseUrl: String, modifier: Modifier = Modifie
                             Text(renderAnnotatedInline(textOnly, MaterialTheme.colorScheme.onSurface), modifier = Modifier.padding(bottom = 2.dp))
                         }
                         for (m in images) {
-                            var url = m.groupValues[2]
-                            if (url.startsWith("/")) url = baseUrl.trimEnd('/') + url
-                            AsyncImage(
-                                model = url,
-                                contentDescription = m.groupValues[1],
+                            MarkdownImage(
+                                url = m.groupValues[2],
+                                description = m.groupValues[1],
+                                baseUrl = baseUrl,
+                                onDoubleTap = onImageDoubleTap,
+                                onLongPress = onImageLongPress,
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             )
                         }
@@ -141,6 +152,35 @@ fun MarkdownText(markdown: String, baseUrl: String, modifier: Modifier = Modifie
             }
         }
     }
+}
+
+/** 正文图片：双击回调（全屏查看）、长按回调（保存），相对路径自动拼服务器地址 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MarkdownImage(
+    url: String,
+    description: String,
+    baseUrl: String,
+    onDoubleTap: ((String) -> Unit)?,
+    onLongPress: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val full = if (url.startsWith("/")) baseUrl.trimEnd('/') + url else url
+    // 没有手势回调时不加点击修饰符，避免无意义的波纹反馈
+    val interaction = if (onDoubleTap != null || onLongPress != null) {
+        modifier.combinedClickable(
+            onClick = {},
+            onDoubleClick = onDoubleTap?.let { cb -> { cb(full) } },
+            onLongClick = onLongPress?.let { cb -> { cb(full) } },
+        )
+    } else {
+        modifier
+    }
+    AsyncImage(
+        model = full,
+        contentDescription = description,
+        modifier = interaction,
+    )
 }
 
 @Composable

@@ -2,6 +2,9 @@
 
 package com.yoorme.squadsignup.ui.announcements
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -59,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +75,7 @@ import com.yoorme.squadsignup.core.AnnouncementSummary
 import com.yoorme.squadsignup.core.ApiException
 import com.yoorme.squadsignup.core.AuthRequiredException
 import com.yoorme.squadsignup.core.ImagePreparer
+import com.yoorme.squadsignup.core.ImageSaver
 import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SquadServer
 import com.yoorme.squadsignup.core.TimeFmt
@@ -79,6 +84,7 @@ import com.yoorme.squadsignup.ui.components.ContentState
 import com.yoorme.squadsignup.ui.components.ContentStateTransition
 import com.yoorme.squadsignup.ui.components.EmptyBox
 import com.yoorme.squadsignup.ui.components.ErrorBox
+import com.yoorme.squadsignup.ui.components.FullScreenImageViewer
 import com.yoorme.squadsignup.ui.components.LabeledTextField
 import com.yoorme.squadsignup.ui.components.LoadingBox
 import com.yoorme.squadsignup.ui.components.MarkdownText
@@ -213,6 +219,40 @@ fun AnnouncementDetailScreen(
     var confirmArchive by remember { mutableStateOf<Boolean?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // ---- 图片：双击全屏查看 / 长按或按钮保存到相册 ----
+    var viewerUrl by remember { mutableStateOf<String?>(null) }
+    var pendingSaveUrl by remember { mutableStateOf<String?>(null) }
+
+    val doSave: (String) -> Unit = { url ->
+        scope.launch {
+            val ext = url.substringAfterLast('.', "").takeIf { it.length in 1..5 } ?: "jpg"
+            val result = ImageSaver.save(context, url, "announcement_${System.currentTimeMillis()}.$ext")
+            Toast.makeText(context, result.getOrElse { it.message ?: "保存失败" }, Toast.LENGTH_SHORT).show()
+        }
+    }
+    // Android 9 及以下写公共相册目录需要存储权限（10+ 免权限，不会走到这里）
+    val savePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val url = pendingSaveUrl
+        pendingSaveUrl = null
+        if (granted && url != null) doSave(url)
+        else Toast.makeText(context, "未授予存储权限，无法保存", Toast.LENGTH_SHORT).show()
+    }
+
+    fun startSave(url: String) {
+        val needsPermission = ImageSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            pendingSaveUrl = url
+            savePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            doSave(url)
+        }
+    }
 
     fun load() {
         scope.launch {
@@ -290,7 +330,12 @@ fun AnnouncementDetailScreen(
                                 Text("已归档", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
                             }
                             Spacer(Modifier.height(12.dp))
-                            MarkdownText(d.contentMarkdown, server.baseUrl)
+                            MarkdownText(
+                                markdown = d.contentMarkdown,
+                                baseUrl = server.baseUrl,
+                                onImageDoubleTap = { viewerUrl = it },
+                                onImageLongPress = { startSave(it) },
+                            )
                             if (d.images.isNotEmpty()) {
                                 Spacer(Modifier.height(8.dp))
                                 Text("附件图片 ${d.images.size} 张（已包含在正文中）",
@@ -342,6 +387,15 @@ fun AnnouncementDetailScreen(
                 }
             }
         }
+    }
+
+    // 全屏图片查看（双击正文图片打开；BackHandler 优先于页面返回）
+    viewerUrl?.let { url ->
+        FullScreenImageViewer(
+            url = url,
+            onDismiss = { viewerUrl = null },
+            onDownload = { startSave(url) },
+        )
     }
 
     confirmArchive?.let { toArchive ->
