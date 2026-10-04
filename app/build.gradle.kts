@@ -39,7 +39,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 代码裁剪已开启（keep 规则见 proguard-rules.pro）；
+            // 资源裁剪保持默认关闭：极光按资源名引用布局/图标，需真机验证推送后再考虑
+            isMinifyEnabled = true
             val keystorePropsFile = rootProject.file("keystore.properties")
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
