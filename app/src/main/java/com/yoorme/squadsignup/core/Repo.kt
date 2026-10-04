@@ -118,8 +118,11 @@ class Repo(private val store: SessionStore) {
     suspend fun notificationSettings(): NotificationSettings =
         try {
             call { notificationSettings() }
+        } catch (e: AuthRequiredException) {
+            // 会话失效必须向上传递（调用方据此回登录页），不能伪装成默认设置
+            throw e
         } catch (e: Exception) {
-            NotificationSettings() // 读取失败按默认值处理
+            NotificationSettings() // 网络失败等场景按默认值处理
         }
 
     suspend fun patchNotificationSettings(body: NotificationSettingsPatch): NotificationSettings =

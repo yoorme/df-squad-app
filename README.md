@@ -57,5 +57,5 @@ app/src/main/java/com/yoorme/squadsignup/
 
 - **认证**：`POST /api/auth/app-login` 换取 30 天 Bearer Token（DataStore 加密存储），401 自动回登录页
 - **屏幕适配**：WindowSizeClass，≥Medium 宽度赛事页自动切换列表-详情双栏；Material 3 动态取色 + 深色模式
-- **通知**：通知渠道「赛事通知」（高优先级）与「公告通知」；WorkManager 15 分钟轮询兜底；厂商推送见 `docs/JPush接入指南.md`
+- **通知**：通知渠道「赛事通知」（高优先级）与「公告通知」；WorkManager 15 分钟轮询兜底；厂商推送见网站仓库 `df-squad-web` 的 `docs/JPush接入指南.md`（本仓库不含该文档）
 - **明文 HTTP**：`network_security_config.xml` 仅放行 `121.196.195.27`；站点配置 HTTPS 域名后删掉该文件并改 baseUrl 即可

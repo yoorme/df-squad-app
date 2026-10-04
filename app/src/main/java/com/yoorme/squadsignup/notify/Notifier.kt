@@ -21,7 +21,6 @@ object Notifier {
     const val EXTRA_TARGET_ID = "targetId"
 
     fun createChannels(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = context.getSystemService(NotificationManager::class.java) ?: return
         mgr.createNotificationChannel(
             NotificationChannel(
@@ -67,6 +66,10 @@ object Notifier {
             .setAutoCancel(true)
             .setContentIntent(tapIntent(context, open, targetId))
             .build()
-        NotificationManagerCompat.from(context).notify(notificationId, notification)
+        try {
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+        } catch (_: SecurityException) {
+            // 极端情况下权限在 canNotify() 检查与发送之间被撤销：忽略本次通知
+        }
     }
 }

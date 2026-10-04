@@ -117,6 +117,10 @@ fun EventEditScreen(
     // 分队数 = ceil(required / 4)（满足 n*4 >= required 且差值 < 4）
     val squadCount = maxOf(1, ((requiredCount.toIntOrNull() ?: 0) + 3) / 4)
 
+    // 编辑模式：服务端 PATCH /api/events/manage 不支持改「要求人数」与增删分队，
+    // 因此分队行数按现有分队数渲染（而不是按 requiredCount 推算），人数也改为只读展示
+    val squadRows = if (eventId != null) maxOf(1, editingSquadIds.size) else squadCount
+
     // 与网页端一致：新建时分队性质自动填充第一个性质；人数变化增减分队时同步补齐
     LaunchedEffect(tags, squadCount, eventId) {
         if (eventId != null) return@LaunchedEffect
@@ -213,9 +217,13 @@ fun EventEditScreen(
 
                 // 对手 + 人数
                 LabeledTextField("对手", opponent, { opponent = it }, placeholder = "对手战队名")
-                LabeledTextField("要求人数", requiredCount, { requiredCount = it.filter { c -> c.isDigit() }.take(3) })
+                if (eventId == null) {
+                    LabeledTextField("要求人数", requiredCount, { requiredCount = it.filter { c -> c.isDigit() }.take(3) })
+                } else {
+                    Text("要求人数：$requiredCount（创建后不可修改）", style = MaterialTheme.typography.bodyMedium)
+                }
                 Text(
-                    "将分为 $squadCount 支队伍（每队上限 4 人）",
+                    "将分为 $squadRows 支队伍（每队上限 4 人）",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -223,7 +231,7 @@ fun EventEditScreen(
                 // 各分队性质
                 Text("分队性质", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val natures = tags!!.squadNatures
-                repeat(squadCount) { idx ->
+                repeat(squadRows) { idx ->
                     val current = squadNatures.getOrNull(idx)
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -235,7 +243,7 @@ fun EventEditScreen(
                             FilterChip(
                                 selected = current == n.id,
                                 onClick = {
-                                    squadNatures = List(squadCount) { i ->
+                                    squadNatures = List(squadRows) { i ->
                                         if (i == idx) n.id else squadNatures.getOrNull(i) ?: natures.firstOrNull()?.id.orEmpty()
                                     }
                                 },
@@ -258,7 +266,7 @@ fun EventEditScreen(
                         if (useCustom && customName.trim().isEmpty()) { error = "请输入自定义名称（至少 1 个字符）"; return@Button }
                         val count = requiredCount.trim().toIntOrNull()
                         if (count == null || count <= 0) { error = "要求人数必须是非空正整数"; return@Button }
-                        if (squadNatures.size < squadCount || squadNatures.take(squadCount).any { it.isEmpty() }) {
+                        if (squadNatures.size < squadRows || squadNatures.take(squadRows).any { it.isEmpty() }) {
                             error = "请为每支分队选择性质"; return@Button
                         }
                         if (opponent.isBlank()) { error = "请输入对手"; return@Button }

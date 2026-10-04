@@ -51,7 +51,11 @@ class PollWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val newestEvent = events.maxByOrNull { it.createdAt }
             if (newestEvent != null) {
                 if (lastEventSeen != null && newestEvent.createdAt > lastEventSeen) {
-                    val fresh = events.filter { it.createdAt > lastEventSeen }.take(3)
+                    // 服务端按 eventTime 倒序返回（不是 createdAt），必须自己按发布时间排序，
+                    // 否则 take(3) 可能漏掉真正新发布的比赛，而水位线已被推高导致永久不通知
+                    val fresh = events.filter { it.createdAt > lastEventSeen }
+                        .sortedByDescending { it.createdAt }
+                        .take(3)
                     if (settings.notifyNewEvent) {
                         for (e in fresh) {
                             Notifier.notify(

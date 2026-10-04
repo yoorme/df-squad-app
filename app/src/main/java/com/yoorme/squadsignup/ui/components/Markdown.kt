@@ -95,9 +95,9 @@ fun MarkdownText(markdown: String, baseUrl: String, modifier: Modifier = Modifie
             val trimmed = line.trim()
             when {
                 trimmed.isEmpty() -> Spacer(Modifier.height(6.dp))
-                trimmed.startsWith("### ") -> heading(trimmed.removePrefix("### "), 18)
-                trimmed.startsWith("## ") -> heading(trimmed.removePrefix("## "), 20)
-                trimmed.startsWith("# ") -> heading(trimmed.removePrefix("# "), 22)
+                trimmed.startsWith("### ") -> Heading(trimmed.removePrefix("### "), 18)
+                trimmed.startsWith("## ") -> Heading(trimmed.removePrefix("## "), 20)
+                trimmed.startsWith("# ") -> Heading(trimmed.removePrefix("# "), 22)
                 trimmed.startsWith("> ") -> Text(
                     trimmed.removePrefix("> "),
                     modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 2.dp),
@@ -144,7 +144,7 @@ fun MarkdownText(markdown: String, baseUrl: String, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun heading(text: String, size: Int) {
+private fun Heading(text: String, size: Int) {
     Text(
         renderAnnotatedInline(text, MaterialTheme.colorScheme.onSurface),
         fontSize = size.sp,

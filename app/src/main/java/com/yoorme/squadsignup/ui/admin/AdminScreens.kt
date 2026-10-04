@@ -376,17 +376,19 @@ fun AdminTagsScreen(repo: Repo, onBack: () -> Unit) {
     var deleteTarget by remember { mutableStateOf<AdminTag?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun load() {
-        scope.launch {
-            try {
-                tags = repo.adminTags(type)
-                error = null
-            } catch (e: Exception) {
-                error = e.message
-            }
+    // 请求发在 LaunchedEffect 协程里：type 变化时旧请求随 key 取消，避免旧响应覆盖新数据
+    suspend fun loadOnce() {
+        try {
+            tags = repo.adminTags(type)
+            error = null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message
         }
     }
-    LaunchedEffect(type) { load() }
+    fun load() { scope.launch { loadOnce() } }
+    LaunchedEffect(type) { loadOnce() }
 
     fun mutate(op: String, id: String?, name: String? = null, disabled: Boolean? = null, category: String? = null) {
         scope.launch {

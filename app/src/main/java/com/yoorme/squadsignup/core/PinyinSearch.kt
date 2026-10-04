@@ -1,6 +1,8 @@
 package com.yoorme.squadsignup.core
 
 import android.icu.text.Transliterator
+import android.os.Build
+import androidx.annotation.RequiresApi
 import java.text.Normalizer
 
 /**
@@ -10,11 +12,15 @@ import java.text.Normalizer
  * - 命中首字母（如 zs）
  *
  * 使用 Android ICU 自带的 Han-Latin 转换，不额外引入第三方依赖。
+ * 注意：android.icu.text.Transliterator 从 Android 10（API 29）才有；
+ * 在 API 26–28 的机器上拼音转换不可用，匹配会自动退化为「原文包含」，
+ * 不会崩溃（若需要覆盖老机型，可考虑引入 tinypinyin 之类的字表库）。
  */
 object PinyinSearch {
-    private val transliterator: Transliterator? by lazy {
-        runCatching { Transliterator.getInstance("Han-Latin") }.getOrNull()
-    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun icuTransliterate(text: String): String =
+        Transliterator.getInstance("Han-Latin").transliterate(text)
 
     private fun normalizeLatin(input: String): String {
         val lower = input.lowercase()
@@ -26,8 +32,12 @@ object PinyinSearch {
         return builder.toString()
     }
 
-    fun pinyin(text: String): String =
-        normalizeLatin(transliterator?.transliterate(text) ?: text)
+    fun pinyin(text: String): String {
+        // API 29 以下没有 ICU Transliterator：跳过转换，只做拉丁字母归一化
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return normalizeLatin(text)
+        val converted = runCatching { icuTransliterate(text) }.getOrDefault(text)
+        return normalizeLatin(converted)
+    }
 
     private fun compact(text: String): String = text.replace(" ", "")
 
