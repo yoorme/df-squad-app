@@ -1,5 +1,11 @@
 package com.yoorme.squadsignup.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.yoorme.squadsignup.ui.theme.SquadMotion
 
 @Composable
 fun PrefixedInput(
@@ -101,6 +108,33 @@ fun LoadingBox(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
     }
+}
+
+/** 列表页的四种展示状态（用于淡入淡出过渡） */
+enum class ContentState { LOADING, ERROR, EMPTY, CONTENT }
+
+/**
+ * 加载/错误/空/内容之间的 M3 效果动画过渡：
+ * 旧状态快速淡出，新状态自 98% 放大淡入，避免状态切换时的生硬跳变。
+ */
+@Composable
+fun ContentStateTransition(
+    state: ContentState,
+    modifier: Modifier = Modifier,
+    content: @Composable (ContentState) -> Unit,
+) {
+    AnimatedContent(
+        targetState = state,
+        modifier = modifier,
+        transitionSpec = {
+            (fadeIn(tween(210, easing = SquadMotion.EmphasizedDecelerate)) +
+                scaleIn(
+                    initialScale = 0.98f,
+                    animationSpec = tween(210, easing = SquadMotion.EmphasizedDecelerate),
+                )).togetherWith(fadeOut(tween(90, easing = SquadMotion.StandardAccelerate)))
+        },
+        label = "contentState",
+    ) { s -> content(s) }
 }
 
 @Composable

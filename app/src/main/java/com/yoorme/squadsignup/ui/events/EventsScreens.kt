@@ -54,6 +54,8 @@ import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SquadMember
 import com.yoorme.squadsignup.core.TimeFmt
 import com.yoorme.squadsignup.ui.components.ConfirmDialog
+import com.yoorme.squadsignup.ui.components.ContentState
+import com.yoorme.squadsignup.ui.components.ContentStateTransition
 import com.yoorme.squadsignup.ui.components.EmptyBox
 import com.yoorme.squadsignup.ui.components.ErrorBox
 import com.yoorme.squadsignup.ui.components.LoadingBox
@@ -62,8 +64,8 @@ import kotlinx.coroutines.launch
 // ============ 赛事卡片 ============
 
 @Composable
-fun EventCard(event: EventSummary, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+fun EventCard(event: EventSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(onClick = onClick, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Text(event.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
@@ -112,23 +114,26 @@ fun EventsScreen(
     refreshToken: Int,
 ) {
     // 记住所在筛选页：从详情返回后不跳回“即将进行”
-    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
     var events by remember { mutableStateOf<List<EventSummary>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun load() {
+    // 请求发在 LaunchedEffect 的协程里（而不是转 scope.launch）：
+    // tab/refresh 变化时旧请求随 key 一起取消，避免旧响应覆盖新数据
+    suspend fun loadOnce() {
         val status = if (tab == 0) "UPCOMING" else "ARCHIVED"
-        scope.launch {
-            try {
-                events = repo.events(status)
-                error = null
-            } catch (e: Exception) {
-                error = e.message
-            }
+        try {
+            events = repo.events(status)
+            error = null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message
         }
     }
-    LaunchedEffect(tab, refreshToken) { load() }
+    fun load() { scope.launch { loadOnce() } }
+    LaunchedEffect(tab, refreshToken) { loadOnce() }
 
     Scaffold(
         // 外层 MainTabs 的 Scaffold 已处理状态栏内边距，这里置 0 避免顶部双重留白
@@ -149,17 +154,31 @@ fun EventsScreen(
                 Tab(tab == 1, onClick = { tab = 1 }, text = { Text("已结束") })
             }
             val list = events
-            when {
-                error != null -> ErrorBox(error ?: "", retry = { load() })
-                list == null -> LoadingBox()
-                list.isEmpty() -> EmptyBox(if (tab == 0) "暂无即将进行的比赛" else "暂无历史比赛")
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(list, key = { it.id }) { e ->
-                        EventCard(e) { openEvent(e.id) }
+            ContentStateTransition(
+                state = when {
+                    error != null -> ContentState.ERROR
+                    list == null -> ContentState.LOADING
+                    list.isEmpty() -> ContentState.EMPTY
+                    else -> ContentState.CONTENT
+                },
+                modifier = Modifier.fillMaxSize(),
+            ) { state ->
+                when (state) {
+                    ContentState.ERROR -> ErrorBox(error ?: "", retry = { load() })
+                    ContentState.LOADING -> LoadingBox()
+                    ContentState.EMPTY -> EmptyBox(if (tab == 0) "暂无即将进行的比赛" else "暂无历史比赛")
+                    ContentState.CONTENT -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(list.orEmpty(), key = { it.id }) { e ->
+                            EventCard(
+                                event = e,
+                                onClick = { openEvent(e.id) },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
                     }
                 }
             }

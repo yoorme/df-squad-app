@@ -1,5 +1,6 @@
 package com.yoorme.squadsignup.ui.me
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +15,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -35,10 +39,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.yoorme.squadsignup.core.ApiException
+import com.yoorme.squadsignup.core.AuthRequiredException
 import com.yoorme.squadsignup.core.MemberProfile
 import com.yoorme.squadsignup.core.MePatchRequest
 import com.yoorme.squadsignup.core.OptionsResponse
@@ -57,6 +63,7 @@ fun MeScreen(
     store: SessionStore,
     session: SessionUser?,
     onOpenNotificationSettings: () -> Unit,
+    onOpenAppearance: () -> Unit,
     onOpenAdmin: () -> Unit,
     onOpenUsers: () -> Unit,
     onOpenInvitations: () -> Unit,
@@ -68,22 +75,26 @@ fun MeScreen(
     var me by remember { mutableStateOf<MemberProfile?>(null) }
     var options by remember { mutableStateOf<OptionsResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // 保存类操作的错误单独提示，避免像加载失败那样整页替换成 ErrorBox
+    var saveError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun load() {
-        scope.launch {
-            try {
-                me = repo.me()
-                options = repo.options()
-                // 角色以服务端为准（提权/降权后本地会话同步刷新）
-                store.updateRole(me!!.role)
-                error = null
-            } catch (e: Exception) {
-                error = e.message
-            }
+    // 请求发在 LaunchedEffect 的协程里：refresh 变化时旧请求随 key 取消，避免旧响应覆盖新数据
+    suspend fun loadOnce() {
+        try {
+            me = repo.me()
+            options = repo.options()
+            // 角色以服务端为准（提权/降权后本地会话同步刷新）
+            store.updateRole(me!!.role)
+            error = null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message
         }
     }
-    LaunchedEffect(refreshToken) { load() }
+    fun load() { scope.launch { loadOnce() } }
+    LaunchedEffect(refreshToken) { loadOnce() }
 
     if (error != null) return ErrorBox(error ?: "", retry = { load() })
     if (me == null || options == null) return LoadingBox()
@@ -124,20 +135,53 @@ fun MeScreen(
                     title = "职责",
                     all = options!!.duties.map { it.id to it.name },
                     selected = profile.duties.map { it.id },
-                ) { ids -> scope.launch { try { repo.patchMe(MePatchRequest(dutyIds = ids)); load() } catch (e: ApiException) { error = e.message } } }
+                ) { ids -> scope.launch {
+                    try {
+                        repo.patchMe(MePatchRequest(dutyIds = ids)); load()
+                        saveError = null
+                    } catch (_: AuthRequiredException) {
+                        // 会话失效：Repo 已清本地会话，界面会自动回登录页
+                    } catch (e: ApiException) {
+                        saveError = e.message
+                    } catch (e: Exception) {
+                        saveError = "网络错误"
+                    }
+                } }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 AbilityEditorRow(
                     all = options!!.abilities,
                     selected = profile.abilities.map { it.id },
-                ) { ids -> scope.launch { try { repo.patchMe(MePatchRequest(abilityIds = ids)); load() } catch (e: ApiException) { error = e.message } } }
+                ) { ids -> scope.launch {
+                    try {
+                        repo.patchMe(MePatchRequest(abilityIds = ids)); load()
+                        saveError = null
+                    } catch (_: AuthRequiredException) {
+                        // 会话失效：Repo 已清本地会话，界面会自动回登录页
+                    } catch (e: ApiException) {
+                        saveError = e.message
+                    } catch (e: Exception) {
+                        saveError = "网络错误"
+                    }
+                } }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 TagEditor(
                     title = "擅长干员",
                     all = options!!.operators.map { it.id to it.name },
                     selected = profile.operators.map { it.id },
-                ) { ids -> scope.launch { try { repo.patchMe(MePatchRequest(operatorIds = ids)); load() } catch (e: ApiException) { error = e.message } } }
-                if (error != null) {
-                    Text(error ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                ) { ids -> scope.launch {
+                    try {
+                        repo.patchMe(MePatchRequest(operatorIds = ids)); load()
+                        saveError = null
+                    } catch (_: AuthRequiredException) {
+                        // 会话失效：Repo 已清本地会话，界面会自动回登录页
+                    } catch (e: ApiException) {
+                        saveError = e.message
+                    } catch (e: Exception) {
+                        saveError = "网络错误"
+                    }
+                } }
+                if (saveError != null) {
+                    Text(saveError ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -155,6 +199,8 @@ fun MeScreen(
                 Text("管理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 MenuRow("通知设置", "新比赛 / 临近提醒 / 公告", onOpenNotificationSettings)
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                MenuRow("外观", "主题色 / 动态取色", onOpenAppearance)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 MenuRow("切换战队站点", null, onSwitchServer)
                 if (session?.isAdmin == true) {
@@ -188,8 +234,11 @@ fun MeScreen(
 @Composable
 private fun MenuRow(title: String, subtitle: String?, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -199,7 +248,11 @@ private fun MenuRow(title: String, subtitle: String?, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        OutlinedButton(onClick = onClick) { Text("进入") }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -207,7 +260,8 @@ private fun MenuRow(title: String, subtitle: String?, onClick: () -> Unit) {
 private fun NicknameEditor(repo: Repo, store: SessionStore, profile: MemberProfile, onSaved: () -> Unit) {
     val prefix = profile.teamPrefix ?: ""
     var editing by remember { mutableStateOf(false) }
-    var nickname by rememberSaveable { mutableStateOf(profile.nickname) }
+    // key 用 profile.nickname：保存成功/外部改名后重新取当前昵称，避免「取消」后残留草稿
+    var nickname by rememberSaveable(profile.nickname) { mutableStateOf(profile.nickname) }
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -240,8 +294,12 @@ private fun NicknameEditor(repo: Repo, store: SessionStore, profile: MemberProfi
                             store.updateNickname(nickname.trim())
                             editing = false
                             onSaved()
+                        } catch (_: AuthRequiredException) {
+                            // 会话失效：Repo 已清本地会话，界面会自动回登录页
                         } catch (e: ApiException) {
                             err = e.message
+                        } catch (e: Exception) {
+                            err = "网络错误"
                         } finally {
                             busy = false
                         }
@@ -406,7 +464,7 @@ private fun AbilityEditorRow(
     onSave: (List<String>) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    var step by remember { mutableStateOf(0) } // 0=选方向 1=选能力
+    var step by remember { androidx.compose.runtime.mutableIntStateOf(0) } // 0=选方向 1=选能力
     var category by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf(selected) }
     val idToName = all.associate { it.id to it.name }

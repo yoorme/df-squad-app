@@ -34,6 +34,11 @@ data class SessionUser(
     val isAdmin: Boolean get() = role == "ADMIN"
 }
 
+// 主题色模式（设备级偏好，不随退出登录清除）
+//   DEFAULT 品牌默认色，与网站静态配色一致
+//   DYNAMIC Android 12+ 跟随壁纸的动态取色
+enum class ThemeMode { DEFAULT, DYNAMIC }
+
 // 会话与本地状态存储（DataStore）
 class SessionStore(private val context: Context) {
 
@@ -41,6 +46,7 @@ class SessionStore(private val context: Context) {
     private val KEY_TOKEN = stringPreferencesKey("token")
     private val KEY_USER = stringPreferencesKey("user")
     private val KEY_SERVER = stringPreferencesKey("server")
+    private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
     private val KEY_LAST_EVENT_SEEN = stringPreferencesKey("last_event_seen")
     private val KEY_LAST_ANN_SEEN = stringPreferencesKey("last_ann_seen")
     private val KEY_NOTIFIED_KEYS = stringSetPreferencesKey("notified_keys")
@@ -54,6 +60,18 @@ class SessionStore(private val context: Context) {
     suspend fun currentToken(): String? = token.first()
     suspend fun currentUser(): SessionUser? = user.first()
     suspend fun currentServer(): SquadServer = Servers.byId(serverId.first())
+
+    // ---- 主题色（设备级偏好，退出登录/切换战队均保留）----
+    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
+        when (prefs[KEY_THEME_MODE]) {
+            ThemeMode.DYNAMIC.name -> ThemeMode.DYNAMIC
+            else -> ThemeMode.DEFAULT
+        }
+    }
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { it[KEY_THEME_MODE] = mode.name }
+    }
 
     suspend fun saveLogin(token: String, user: LoginUser) {
         context.dataStore.edit { prefs ->

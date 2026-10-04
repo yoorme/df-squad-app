@@ -49,6 +49,8 @@ import com.yoorme.squadsignup.core.PinyinSearch
 import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.TimeFmt
 import com.yoorme.squadsignup.ui.components.ConfirmDialog
+import com.yoorme.squadsignup.ui.components.ContentState
+import com.yoorme.squadsignup.ui.components.ContentStateTransition
 import com.yoorme.squadsignup.ui.components.EmptyBox
 import com.yoorme.squadsignup.ui.components.ErrorBox
 import com.yoorme.squadsignup.ui.components.LoadingBox
@@ -82,44 +84,52 @@ fun MembersScreen(repo: Repo, openMember: (String) -> Unit) {
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
         val source = members
-        when {
-            error != null -> ErrorBox(error ?: "", retry = { load() })
-            source == null -> LoadingBox()
-            else -> {
-                val filtered = source.filter {
-                    PinyinSearch.matches(query, it.nickname) || PinyinSearch.matches(query, it.username)
-                }
-                if (filtered.isEmpty()) {
-                    EmptyBox(if (query.isBlank()) "暂无队员" else "未找到匹配的队员")
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(filtered, key = { it.id }) { m ->
-                            Card(onClick = { openMember(m.id) }, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(14.dp)) {
-                                    Row {
-                                        Text(
-                                            m.nickname,
-                                            fontWeight = FontWeight.SemiBold,
-                                            style = MaterialTheme.typography.titleMedium,
-                                        )
-                                        if (m.role == "ADMIN") {
-                                            Text(
-                                                "  管理员",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
-                                    }
+        val filtered = source?.filter {
+            PinyinSearch.matches(query, it.nickname) || PinyinSearch.matches(query, it.username)
+        }
+        ContentStateTransition(
+            state = when {
+                error != null -> ContentState.ERROR
+                source == null -> ContentState.LOADING
+                filtered.isNullOrEmpty() -> ContentState.EMPTY
+                else -> ContentState.CONTENT
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) { state ->
+            when (state) {
+                ContentState.ERROR -> ErrorBox(error ?: "", retry = { load() })
+                ContentState.LOADING -> LoadingBox()
+                ContentState.EMPTY -> EmptyBox(if (query.isBlank()) "暂无队员" else "未找到匹配的队员")
+                ContentState.CONTENT -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(filtered.orEmpty(), key = { it.id }) { m ->
+                        Card(
+                            onClick = { openMember(m.id) },
+                            modifier = Modifier.fillMaxWidth().animateItem(),
+                        ) {
+                            Column(Modifier.padding(14.dp)) {
+                                Row {
                                     Text(
-                                        m.username,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        m.nickname,
+                                        fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.titleMedium,
                                     )
+                                    if (m.role == "ADMIN") {
+                                        Text(
+                                            "  管理员",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
                                 }
+                                Text(
+                                    m.username,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

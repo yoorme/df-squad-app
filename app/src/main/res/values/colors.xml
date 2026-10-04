@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与 Theme.kt LightColors.background 一致（网站 globals.css 浅色 background） -->
+    <color name="window_background">#F5F6FA</color>
+</resources>

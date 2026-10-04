@@ -59,6 +59,8 @@ import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SquadServer
 import com.yoorme.squadsignup.core.TimeFmt
 import com.yoorme.squadsignup.ui.components.ConfirmDialog
+import com.yoorme.squadsignup.ui.components.ContentState
+import com.yoorme.squadsignup.ui.components.ContentStateTransition
 import com.yoorme.squadsignup.ui.components.EmptyBox
 import com.yoorme.squadsignup.ui.components.ErrorBox
 import com.yoorme.squadsignup.ui.components.LabeledTextField
@@ -76,23 +78,26 @@ fun AnnouncementsScreen(
     createAnnouncement: () -> Unit,
     refreshToken: Int,
 ) {
-    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
     var list by remember { mutableStateOf<List<AnnouncementSummary>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun load() {
+    // 请求发在 LaunchedEffect 的协程里（而不是转 scope.launch）：
+    // tab/refresh 变化时旧请求随 key 一起取消，避免旧响应覆盖新数据
+    suspend fun loadOnce() {
         val status = if (tab == 1 && isAdmin) "archived" else "normal"
-        scope.launch {
-            try {
-                list = repo.announcements(status)
-                error = null
-            } catch (e: Exception) {
-                error = e.message
-            }
+        try {
+            list = repo.announcements(status)
+            error = null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message
         }
     }
-    LaunchedEffect(tab, isAdmin, refreshToken) { load() }
+    fun load() { scope.launch { loadOnce() } }
+    LaunchedEffect(tab, isAdmin, refreshToken) { loadOnce() }
 
     Scaffold(
         // 外层已处理状态栏内边距，置 0 避免顶部双重留白
@@ -115,40 +120,53 @@ fun AnnouncementsScreen(
                 }
             }
             val l = list
-            when {
-                error != null -> ErrorBox(error ?: "", retry = { load() })
-                l == null -> LoadingBox()
-                l.isEmpty() -> EmptyBox("暂无公告")
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(l, key = { it.id }) { a ->
-                        Card(onClick = { openAnnouncement(a.id) }, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(14.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        a.title,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    if (!a.isRead) {
-                                        Box(
-                                            modifier = Modifier
-                                                .padding(start = 6.dp)
-                                                .size(8.dp)
-                                                .background(MaterialTheme.colorScheme.error, CircleShape)
+            ContentStateTransition(
+                state = when {
+                    error != null -> ContentState.ERROR
+                    l == null -> ContentState.LOADING
+                    l.isEmpty() -> ContentState.EMPTY
+                    else -> ContentState.CONTENT
+                },
+                modifier = Modifier.fillMaxSize(),
+            ) { state ->
+                when (state) {
+                    ContentState.ERROR -> ErrorBox(error ?: "", retry = { load() })
+                    ContentState.LOADING -> LoadingBox()
+                    ContentState.EMPTY -> EmptyBox("暂无公告")
+                    ContentState.CONTENT -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(l.orEmpty(), key = { it.id }) { a ->
+                            Card(
+                                onClick = { openAnnouncement(a.id) },
+                                modifier = Modifier.fillMaxWidth().animateItem(),
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            a.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f),
                                         )
+                                        if (!a.isRead) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .padding(start = 6.dp)
+                                                    .size(8.dp)
+                                                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                                            )
+                                        }
                                     }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "${a.author.nickname} · ${TimeFmt.short(a.createdAt)} · ${a.commentCount} 条评论",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    "${a.author.nickname} · ${TimeFmt.short(a.createdAt)} · ${a.commentCount} 条评论",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                             }
                         }
                     }

@@ -6,19 +6,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
 import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SessionStore
+import com.yoorme.squadsignup.core.ThemeMode
 import com.yoorme.squadsignup.notify.Notifier
 import com.yoorme.squadsignup.ui.Root
 import com.yoorme.squadsignup.ui.theme.SquadTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 class MainActivity : ComponentActivity() {
 
@@ -26,24 +27,43 @@ class MainActivity : ComponentActivity() {
     private val pendingOpen = mutableStateOf<String?>(null)
     private val pendingId = mutableStateOf<String?>(null)
 
+    // 主题偏好（读取完成前保持启动画面，避免先默认色再跳动态色的闪烁）
+    private val themeMode = mutableStateOf<ThemeMode?>(null)
+    // 会话首读结果：作为 Root 里 token 状态的初值，避免已登录用户冷启动先闪一下登录页
+    private val initialToken = mutableStateOf<String?>(null)
+    private val sessionReady = mutableStateOf(false)
+
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Notifier.createChannels(this)
         requestNotificationPermission()
         readIntent(intent)
 
+        val store = SessionStore(applicationContext)
+        val repo = Repo(store)
+
+        splash.setKeepOnScreenCondition { themeMode.value == null || !sessionReady.value }
+        lifecycleScope.launch {
+            themeMode.value = runCatching {
+                withTimeout(2000) { store.themeMode.first() }
+            }.getOrDefault(ThemeMode.DEFAULT)
+            initialToken.value = runCatching {
+                withTimeout(2000) { store.token.first() }
+            }.getOrNull()
+            sessionReady.value = true
+        }
+
         setContent {
-            SquadTheme {
+            SquadTheme(themeMode = themeMode.value ?: ThemeMode.DEFAULT) {
                 val windowSizeClass = calculateWindowSizeClass(this)
-                val store = remember { SessionStore(applicationContext) }
-                val repo = remember { Repo(store) }
                 Root(
                     store = store,
                     repo = repo,
                     windowWidth = windowSizeClass.widthSizeClass,
+                    initialToken = initialToken.value,
                     pendingOpen = pendingOpen.value,
                     pendingId = pendingId.value,
                     onPendingHandled = {
