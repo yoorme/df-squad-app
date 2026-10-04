@@ -56,6 +56,11 @@ import com.yoorme.squadsignup.ui.components.ErrorBox
 import com.yoorme.squadsignup.ui.components.LoadingBox
 import com.yoorme.squadsignup.ui.components.SearchField
 import kotlinx.coroutines.launch
+import java.text.Collator
+import java.util.Locale
+
+// 中文昵称按拼音排序（Collator 对 zh 即拼音序，API 全版本可用）
+private val NAME_COLLATOR = Collator.getInstance(Locale.CHINA)
 
 @Composable
 fun MembersScreen(repo: Repo, openMember: (String) -> Unit) {
@@ -67,7 +72,8 @@ fun MembersScreen(repo: Repo, openMember: (String) -> Unit) {
     fun load() {
         scope.launch {
             try {
-                members = repo.members()
+                // 按昵称排序（Collator 对中文即拼音序）
+                members = repo.members().sortedWith { a, b -> NAME_COLLATOR.compare(a.nickname, b.nickname) }
                 error = null
             } catch (e: Exception) {
                 error = e.message
@@ -80,7 +86,7 @@ fun MembersScreen(repo: Repo, openMember: (String) -> Unit) {
         SearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "搜索昵称/用户名（支持中文与拼音）",
+            placeholder = "搜索",
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
         val source = members

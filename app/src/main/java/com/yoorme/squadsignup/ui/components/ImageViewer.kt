@@ -43,7 +43,7 @@ import coil.compose.SubcomposeAsyncImage
 
 /**
  * 全屏图片查看：拖动平移、双指捏合缩放（1x–5x）、双击复位。
- * 左上角 ✕ 退出、右上角 ⬇ 保存到相册（毛玻璃圆形按钮），长按图片同样保存。
+ * 左上角 ✕ 退出、右上角 ⬇ 保存到相册（毛玻璃圆形按钮）。
  * 系统返回键由 BackHandler 处理（晚于页面注册，优先于导航返回）。
  */
 @Composable
@@ -99,7 +99,6 @@ fun FullScreenImageViewer(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = { scale = 1f; offset = Offset.Zero },
-                        onLongPress = { onDownload() },
                     )
                 },
         )

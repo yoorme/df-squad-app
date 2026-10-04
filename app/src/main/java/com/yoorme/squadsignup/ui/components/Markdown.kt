@@ -1,7 +1,7 @@
 package com.yoorme.squadsignup.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -29,6 +30,10 @@ import coil.compose.AsyncImage
 // 覆盖网站公告常用语法；复杂表格等请在网页端查看
 
 private val IMAGE_RE = Regex("""!\[([^\]]*)]\(([^)]+)\)""")
+
+/** 提取正文里引用的图片路径（原样，通常是 /uploads/... 相对路径），按出现顺序去重 */
+fun extractImageUrls(markdown: String): List<String> =
+    IMAGE_RE.findAll(markdown).map { it.groupValues[2] }.distinct().toList()
 private val LINK_RE = Regex("""\[([^\]]+)]\(([^)]+)\)""")
 private val BOLD_RE = Regex("""\*\*(.+?)\*\*""")
 private val ITALIC_RE = Regex("""\*(.+?)\*""")
@@ -71,9 +76,8 @@ fun MarkdownText(
     markdown: String,
     baseUrl: String,
     modifier: Modifier = Modifier,
-    // 图片手势：双击进全屏 / 长按保存（不传则图片不可交互）
-    onImageDoubleTap: ((String) -> Unit)? = null,
-    onImageLongPress: ((String) -> Unit)? = null,
+    // 图片单击回调（用于进入全屏查看）；不传则图片不可点击
+    onImageClick: ((String) -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
         val lines = markdown.replace("\r\n", "\n").split("\n")
@@ -122,8 +126,7 @@ fun MarkdownText(
                         url = m.groupValues[2],
                         description = m.groupValues[1],
                         baseUrl = baseUrl,
-                        onDoubleTap = onImageDoubleTap,
-                        onLongPress = onImageLongPress,
+                        onClick = onImageClick,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     )
                 }
@@ -142,8 +145,7 @@ fun MarkdownText(
                                 url = m.groupValues[2],
                                 description = m.groupValues[1],
                                 baseUrl = baseUrl,
-                                onDoubleTap = onImageDoubleTap,
-                                onLongPress = onImageLongPress,
+                                onClick = onImageClick,
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             )
                         }
@@ -154,25 +156,22 @@ fun MarkdownText(
     }
 }
 
-/** 正文图片：双击回调（全屏查看）、长按回调（保存），相对路径自动拼服务器地址 */
-@OptIn(ExperimentalFoundationApi::class)
+/** 正文图片：单击回调（全屏查看），相对路径自动拼服务器地址 */
 @Composable
 private fun MarkdownImage(
     url: String,
     description: String,
     baseUrl: String,
-    onDoubleTap: ((String) -> Unit)?,
-    onLongPress: ((String) -> Unit)?,
+    onClick: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val full = if (url.startsWith("/")) baseUrl.trimEnd('/') + url else url
-    // 没有手势回调时不加点击修饰符，避免无意义的波纹反馈
-    val interaction = if (onDoubleTap != null || onLongPress != null) {
-        modifier.combinedClickable(
-            onClick = {},
-            onDoubleClick = onDoubleTap?.let { cb -> { cb(full) } },
-            onLongClick = onLongPress?.let { cb -> { cb(full) } },
-        )
+    // 图片点击不加波纹（照片上叠波纹观感差），保留点击区域即可
+    val interaction = if (onClick != null) {
+        modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+        ) { onClick(full) }
     } else {
         modifier
     }

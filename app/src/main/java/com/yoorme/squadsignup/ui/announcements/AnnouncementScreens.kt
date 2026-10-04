@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -88,6 +90,7 @@ import com.yoorme.squadsignup.ui.components.FullScreenImageViewer
 import com.yoorme.squadsignup.ui.components.LabeledTextField
 import com.yoorme.squadsignup.ui.components.LoadingBox
 import com.yoorme.squadsignup.ui.components.MarkdownText
+import com.yoorme.squadsignup.ui.components.extractImageUrls
 import kotlinx.coroutines.launch
 
 // ============ 公告列表 ============
@@ -221,36 +224,59 @@ fun AnnouncementDetailScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // ---- 图片：双击全屏查看 / 长按或按钮保存到相册 ----
+    // ---- 图片：单击进全屏；全屏里的 ⬇ 存单张，「下载全部照片」存全部 ----
     var viewerUrl by remember { mutableStateOf<String?>(null) }
-    var pendingSaveUrl by remember { mutableStateOf<String?>(null) }
+    var pendingSave by remember { mutableStateOf<List<String>>(emptyList()) }
+    var downloadingAll by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableIntStateOf(0) }
 
-    val doSave: (String) -> Unit = { url ->
-        scope.launch {
-            val ext = url.substringAfterLast('.', "").takeIf { it.length in 1..5 } ?: "jpg"
-            val result = ImageSaver.save(context, url, "announcement_${System.currentTimeMillis()}.$ext")
-            Toast.makeText(context, result.getOrElse { it.message ?: "保存失败" }, Toast.LENGTH_SHORT).show()
+    val doSave: (List<String>) -> Unit = { urls ->
+        if (urls.isNotEmpty()) {
+            scope.launch {
+                if (urls.size > 1) {
+                    downloadingAll = true
+                    downloadProgress = 0
+                }
+                val stamp = System.currentTimeMillis()
+                var ok = 0
+                var lastError: String? = null
+                urls.forEachIndexed { index, url ->
+                    downloadProgress = index + 1
+                    val ext = url.substringAfterLast('.', "").takeIf { it.length in 1..5 } ?: "jpg"
+                    val suffix = if (urls.size > 1) "_$index" else ""
+                    val result = ImageSaver.save(context, url, "announcement_$stamp$suffix.$ext")
+                    if (result.isSuccess) ok++ else lastError = result.exceptionOrNull()?.message
+                }
+                downloadingAll = false
+                val msg = when {
+                    urls.size == 1 -> if (ok == 1) "已保存到相册" else lastError ?: "保存失败"
+                    ok == urls.size -> "已保存 $ok 张到相册"
+                    else -> "已保存 $ok 张，${urls.size - ok} 张失败" + (lastError?.let { "（$it）" } ?: "")
+                }
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
         }
     }
     // Android 9 及以下写公共相册目录需要存储权限（10+ 免权限，不会走到这里）
     val savePermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        val url = pendingSaveUrl
-        pendingSaveUrl = null
-        if (granted && url != null) doSave(url)
+        val urls = pendingSave
+        pendingSave = emptyList()
+        if (granted && urls.isNotEmpty()) doSave(urls)
         else Toast.makeText(context, "未授予存储权限，无法保存", Toast.LENGTH_SHORT).show()
     }
 
-    fun startSave(url: String) {
+    fun startSave(urls: List<String>) {
+        if (urls.isEmpty()) return
         val needsPermission = ImageSaver.needsLegacyPermission() &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingSaveUrl = url
+            pendingSave = urls
             savePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         } else {
-            doSave(url)
+            doSave(urls)
         }
     }
 
@@ -314,6 +340,13 @@ fun AnnouncementDetailScreen(
             detail == null -> LoadingBox(Modifier.padding(padding))
             else -> {
                 val d = detail!!
+                // 「下载全部照片」的来源：images 列表 + 正文引用（去重），拼成绝对地址
+                val allImageUrls = remember(d) {
+                    val base = server.baseUrl.trimEnd('/')
+                    (d.images.sortedBy { it.sortOrder }.map { it.path } + extractImageUrls(d.contentMarkdown))
+                        .distinct()
+                        .map { if (it.startsWith("/")) base + it else it }
+                }
                 Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
                     // 公告内容独立区块
                     Card(Modifier.fillMaxWidth()) {
@@ -333,14 +366,28 @@ fun AnnouncementDetailScreen(
                             MarkdownText(
                                 markdown = d.contentMarkdown,
                                 baseUrl = server.baseUrl,
-                                onImageDoubleTap = { viewerUrl = it },
-                                onImageLongPress = { startSave(it) },
+                                onImageClick = { viewerUrl = it },
                             )
-                            if (d.images.isNotEmpty()) {
-                                Spacer(Modifier.height(8.dp))
-                                Text("附件图片 ${d.images.size} 张（已包含在正文中）",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (allImageUrls.isNotEmpty()) {
+                                Spacer(Modifier.height(12.dp))
+                                OutlinedButton(
+                                    onClick = { startSave(allImageUrls) },
+                                    enabled = !downloadingAll,
+                                ) {
+                                    if (downloadingAll) {
+                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("下载中 $downloadProgress/${allImageUrls.size}")
+                                    } else {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("下载全部照片（${allImageUrls.size} 张）")
+                                    }
+                                }
                             }
                         }
                     }
@@ -389,12 +436,12 @@ fun AnnouncementDetailScreen(
         }
     }
 
-    // 全屏图片查看（双击正文图片打开；BackHandler 优先于页面返回）
+    // 全屏图片查看（单击正文图片打开；BackHandler 优先于页面返回）
     viewerUrl?.let { url ->
         FullScreenImageViewer(
             url = url,
             onDismiss = { viewerUrl = null },
-            onDownload = { startSave(url) },
+            onDownload = { startSave(listOf(url)) },
         )
     }
 
