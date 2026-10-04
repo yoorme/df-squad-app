@@ -8,7 +8,6 @@ import com.yoorme.squadsignup.MainActivity
 import com.yoorme.squadsignup.core.ApiClient
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 // 极光推送事件回调：registration_id 上报 + 通知点击深链
 class PushMessageReceiver : JPushMessageReceiver() {

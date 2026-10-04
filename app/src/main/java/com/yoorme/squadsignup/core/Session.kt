@@ -58,7 +58,6 @@ class SessionStore(private val context: Context) {
     val serverId: Flow<String?> = context.dataStore.data.map { it[KEY_SERVER] }
 
     suspend fun currentToken(): String? = token.first()
-    suspend fun currentUser(): SessionUser? = user.first()
     suspend fun currentServer(): SquadServer = Servers.byId(serverId.first())
 
     // ---- 主题色（设备级偏好，退出登录/切换战队均保留）----

@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -237,35 +236,5 @@ fun LabeledTextField(
             singleLine = singleLine,
             minLines = minLines,
         )
-    }
-}
-
-@Composable
-fun ChipRow(label: String, chips: List<Pair<String, String>>, selectedId: String?, onSelect: (String) -> Unit) {
-    if (chips.isEmpty()) return
-    Column(Modifier.padding(vertical = 4.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            chips.take(6).forEach { (id, name) ->
-                AssistChip(
-                    onClick = { onSelect(id) },
-                    label = { Text(name) },
-                    colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
-                        containerColor = if (selectedId == id) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surface
-                    ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun TwoColumnRow(left: @Composable () -> Unit, right: @Composable () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.weight(1f)) { left() }
-        Box(Modifier.width(12.dp))
-        Box(Modifier.weight(1f)) { right() }
     }
 }

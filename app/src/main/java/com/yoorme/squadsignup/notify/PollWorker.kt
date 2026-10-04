@@ -6,7 +6,6 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.yoorme.squadsignup.core.EventSummary
 import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SessionStore
 import com.yoorme.squadsignup.core.TimeFmt

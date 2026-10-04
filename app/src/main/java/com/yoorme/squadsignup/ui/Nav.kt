@@ -386,7 +386,6 @@ private fun MainTabs(
                     session = session,
                     onOpenNotificationSettings = { navController.navigate("notifSettings") },
                     onOpenAppearance = { navController.navigate("appearance") },
-                    onOpenAdmin = { },
                     onOpenUsers = { navController.navigate("adminUsers") },
                     onOpenInvitations = { navController.navigate("adminInvites") },
                     onOpenTags = { navController.navigate("adminTags") },
