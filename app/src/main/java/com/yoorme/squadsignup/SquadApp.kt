@@ -9,6 +9,19 @@ import com.yoorme.squadsignup.notify.PollWorker
 import com.yoorme.squadsignup.notify.PushManager
 
 class SquadApp : Application() {
+
+    companion object {
+        /**
+         * 应用级协程作用域：用于页面退出组合后仍必须跑完的收尾任务
+         * （如离开公告编辑页时清理未保存的上传图片）。
+         */
+        val appScope: kotlinx.coroutines.CoroutineScope by lazy {
+            kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+            )
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         Notifier.createChannels(this)

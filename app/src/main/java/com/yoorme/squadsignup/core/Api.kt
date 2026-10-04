@@ -120,6 +120,10 @@ interface SquadApi {
     @POST("api/upload")
     suspend fun uploadImage(@Part file: MultipartBody.Part): ApiEnvelope<UploadResponse>
 
+    // 删除上传文件（仅管理员；未保存就离开编辑页时清理 tmp）
+    @DELETE("api/upload")
+    suspend fun deleteUpload(@Query("path") path: String): ApiEnvelope<SimpleOk>
+
     // ---- 标签 / 选项 ----
     @GET("api/options")
     suspend fun options(@Query("only") only: String = "all"): ApiEnvelope<OptionsResponse>

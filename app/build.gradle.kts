@@ -83,6 +83,8 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.10.2")
 
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+    // 公告图片压缩时需要按 EXIF 纠正方向
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

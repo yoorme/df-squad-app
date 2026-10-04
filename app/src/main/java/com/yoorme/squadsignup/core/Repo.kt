@@ -99,6 +99,11 @@ class Repo(private val store: SessionStore) {
         return call { uploadImage(part) }.path
     }
 
+    // 删除上传文件（仅管理员）：用于清理未保存就离开编辑页时留在 tmp 的图片
+    suspend fun deleteUpload(path: String) {
+        call { deleteUpload(path) }
+    }
+
     suspend fun archiveAnnouncement(id: String, archived: Boolean) {
         call { patchAnnouncement(AnnouncementSaveRequest(id = id, isArchived = archived)) }
     }

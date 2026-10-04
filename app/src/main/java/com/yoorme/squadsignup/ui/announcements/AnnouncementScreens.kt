@@ -2,8 +2,7 @@
 
 package com.yoorme.squadsignup.ui.announcements
 
-import android.content.Context
-import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,10 +65,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.yoorme.squadsignup.SquadApp
 import com.yoorme.squadsignup.core.AnnouncementDetail
 import com.yoorme.squadsignup.core.AnnouncementSummary
 import com.yoorme.squadsignup.core.ApiException
 import com.yoorme.squadsignup.core.AuthRequiredException
+import com.yoorme.squadsignup.core.ImagePreparer
 import com.yoorme.squadsignup.core.Repo
 import com.yoorme.squadsignup.core.SquadServer
 import com.yoorme.squadsignup.core.TimeFmt
@@ -432,9 +433,8 @@ private fun CommentBubble(
 
 // ============ 公告编辑 ============
 
-// 与网站管理端保持一致：最多 20 张、单张 ≤5MB（服务端会再校验一次）
+// 与网站管理端保持一致：最多 20 张；单张 >5MB 由 ImagePreparer 自动压缩
 private const val MAX_ANNOUNCEMENT_IMAGES = 20
-private const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 private fun extOfMime(mime: String): String = when {
     mime.contains("png", true) -> "png"
@@ -442,32 +442,6 @@ private fun extOfMime(mime: String): String = when {
     mime.contains("webp", true) -> "webp"
     mime.contains("bmp", true) -> "bmp"
     else -> "jpg"
-}
-
-/**
- * 读取所选图片为字节流；超过 5MB 立即中止（与网站端行为一致，避免读到内存里才发现超限）。
- * 返回 (bytes, mimeType)。
- */
-private fun readPickedImage(context: Context, uri: Uri): Result<Pair<ByteArray, String>> = try {
-    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-    val input = context.contentResolver.openInputStream(uri)
-        ?: return Result.failure(IllegalArgumentException("无法读取所选图片"))
-    val bytes = input.use { stream ->
-        val out = java.io.ByteArrayOutputStream()
-        val buf = ByteArray(64 * 1024)
-        while (true) {
-            val n = stream.read(buf)
-            if (n < 0) break
-            out.write(buf, 0, n)
-            if (out.size() > MAX_UPLOAD_BYTES) {
-                return Result.failure(IllegalArgumentException("图片超过 5MB，请先压缩后再上传"))
-            }
-        }
-        out.toByteArray()
-    }
-    Result.success(bytes to mime)
-} catch (e: Exception) {
-    Result.failure(IllegalArgumentException("读取图片失败：${e.message ?: "未知错误"}"))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -481,6 +455,8 @@ fun AnnouncementEditScreen(
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
     var images by remember { mutableStateOf<List<String>>(emptyList()) }
+    // 本次编辑中已上传、尚未保存的图片：离开页面时清理，避免残留在服务器 tmp 目录
+    var sessionUploads by remember { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(announcementId != null) }
     var saving by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
@@ -488,6 +464,21 @@ fun AnnouncementEditScreen(
     var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    /** 离开编辑页：未保存时在应用级作用域里清理本次上传的 tmp 图片（保存成功则服务端已迁移，无需删） */
+    fun leave(saved: Boolean) {
+        val orphans = if (saved) emptyList() else sessionUploads
+        sessionUploads = emptyList()
+        if (orphans.isNotEmpty()) {
+            SquadApp.appScope.launch {
+                for (p in orphans) runCatching { repo.deleteUpload(p) }
+            }
+        }
+        onDone()
+    }
+
+    // 系统返回键同样走清理逻辑；保存进行中不响应，避免打断已发出的请求
+    BackHandler { if (!saving) leave(saved = false) }
 
     LaunchedEffect(announcementId) {
         if (announcementId != null) {
@@ -517,7 +508,8 @@ fun AnnouncementEditScreen(
             uploading = true; error = null; notice = null
             var uploaded = 0
             for (uri in uris) {
-                val picked = readPickedImage(context, uri)
+                // ≤5MB 原样上传；>5MB 自动压缩并纠正 EXIF 方向
+                val picked = ImagePreparer.prepare(context, uri)
                 if (picked.isFailure) {
                     error = picked.exceptionOrNull()?.message ?: "图片读取失败"
                     break
@@ -526,6 +518,7 @@ fun AnnouncementEditScreen(
                 try {
                     val path = repo.uploadImage(bytes, "image.${extOfMime(mime)}", mime)
                     images = images + path
+                    sessionUploads = sessionUploads + path
                     // 与网站管理端一致：上传后立即插入正文末尾（服务端保存时迁移 tmp→正式并改写路径）
                     content = "$content\n\n![图片]($path)\n"
                     uploaded++
@@ -551,7 +544,9 @@ fun AnnouncementEditScreen(
             TopAppBar(
                 title = { Text(if (announcementId == null) "发布公告" else "编辑公告") },
                 navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = onDone) {
+                    androidx.compose.material3.IconButton(
+                        onClick = { if (!saving) leave(saved = false) },
+                    ) {
                         androidx.compose.material3.Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "取消",
@@ -644,6 +639,13 @@ fun AnnouncementEditScreen(
                                                 Regex("\\n*!\\[[^\\]]*\\]\\(${Regex.escape(path)}\\)\\n*"),
                                                 "\n",
                                             )
+                                            // 本次会话刚上传、还没保存的图：立即删掉服务器上的 tmp 文件
+                                            if (path in sessionUploads) {
+                                                sessionUploads = sessionUploads - path
+                                                SquadApp.appScope.launch {
+                                                    runCatching { repo.deleteUpload(path) }
+                                                }
+                                            }
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -672,7 +674,8 @@ fun AnnouncementEditScreen(
                             try {
                                 if (announcementId == null) repo.createAnnouncement(title.trim(), content, images)
                                 else repo.updateAnnouncement(announcementId, title.trim(), content, images)
-                                onDone()
+                                // 保存成功：服务端已把 tmp 图迁移到正式目录，无需清理
+                                leave(saved = true)
                             } catch (_: AuthRequiredException) {
                                 // 会话失效：Repo 已清本地会话，界面会自动回登录页
                             } catch (e: ApiException) {
